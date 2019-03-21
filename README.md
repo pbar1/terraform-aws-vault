@@ -45,4 +45,34 @@ In progress:
 - TODO: make Sumo Logic, Datadog, and TLS certs optional at build time
 
 <!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|:----:|:-----:|:-----:|
+| ami\_id | AMI ID to launch the Vault auto scaling group with | string | n/a | yes |
+| cluster\_name | Name of the Vault cluster | string | `"vault"` | no |
+| domain\_name | Domain name of DNS entry to create | string | n/a | yes |
+| dynamodb\_read\_capacity | Read capacity for Vault's DynamoDB high availability backend | string | `"5"` | no |
+| dynamodb\_write\_capacity | Write capacity for Vault's DynamoDB high availability backend | string | `"5"` | no |
+| enable\_termination\_protection | Enable EC2 instance termination protection | string | `"true"` | no |
+| instance\_type | EC2 instance type for Vault instances | string | `"t2.medium"` | no |
+| internal\_lb | Whether to make the Vault load balancer internal | string | `"true"` | no |
+| max\_instances | Maximum number of Vault instances in the auto scaling group | string | `"3"` | no |
+| min\_instances | Minimum number of Vault instances in the auto scaling group | string | `"3"` | no |
+| ssh\_key\_name | Name of the SSH keypair to use for the Vault EC2 instances | string | n/a | yes |
+| subnet\_ids | List of subnet IDs to launch the Vault auto scaling group in | list | n/a | yes |
+| tags | Extra tags to add to all resources created by this module | map | `{}` | no |
+| vpc\_id | ID of the AWS VPC to create the Vault cluster in | string | n/a | yes |
+| zone\_id | Route53 hosted zone ID to create the DNS entry in | string | n/a | yes |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| kms\_key\_id | ID of the KMS key that Vault uses for Auto-Unseal, S3 encryption, and SSM parameters |
+| vault\_client\_sg\_id | ID of the security group used by clients to connect to Vault |
+| vault\_cluster\_fqdn | Fully qualified domain name for the Vault cluster |
+| vault\_cluster\_role\_arn | ARN of the AWS IAM role that Vault runs as |
+| vault\_cluster\_role\_name | Name of the AWS IAM role that Vault runs as |
+
 <!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
