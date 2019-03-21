@@ -43,3 +43,6 @@ In progress:
 - Must manually add AdministratorAccess policy to the Vault role, due to KMS issues when accessing the S3 backend
 - TLS is disabled by default in the user data
 - TODO: make Sumo Logic, Datadog, and TLS certs optional at build time
+
+<!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
+<!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
