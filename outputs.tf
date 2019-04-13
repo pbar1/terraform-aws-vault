@@ -3,11 +3,6 @@ output "vault_cluster_fqdn" {
   value       = "${aws_route53_record.vault.fqdn}"
 }
 
-output "vault_client_sg_id" {
-  description = "ID of the security group used by clients to connect to Vault"
-  value       = "${aws_security_group.vault_client.id}"
-}
-
 output "vault_cluster_role_arn" {
   description = "ARN of the AWS IAM role that Vault runs as"
   value       = "${aws_iam_role.vault.arn}"

@@ -3,12 +3,18 @@
   "variables": {
     "aws_region": "us-west-2",
     "iam_instance_profile": "packer",
-    "vault_version": "1.0.3"
+    "vault_version": "1.1.0"
   },
   "builders": [
     {
       "ami_name": "vault-{{user `vault_version`}}-{{isotime | clean_ami_name}}",
       "ami_description": "Hashicorp Vault on Amazon Linux 2",
+      "ami_users": [
+        "112710217411",
+        "868960328432",
+        "232293605344"
+      ],
+      "ami_regions": ["eu-central-1"],
       "iam_instance_profile": "{{user `iam_instance_profile`}}",
       "instance_type": "t2.micro",
       "region": "{{user `aws_region`}}",
