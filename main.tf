@@ -41,43 +41,6 @@ resource "aws_kms_alias" "vault" {
 resource "aws_kms_key" "vault" {
   tags        = "${local.tags}"
   description = "${var.cluster_name} key for Vault S3 storage backend and Auto Unseal"
-  policy      = "${data.aws_iam_policy_document.vault_key_policy.json}"
-}
-
-data "aws_iam_policy_document" "vault_key_policy" {
-  statement {
-    sid    = "VaultAutoUnseal"
-    effect = "Deny"
-
-    not_principals {
-      type = "AWS"
-
-      identifiers = [
-        "${aws_iam_role.vault.arn}",
-        "${data.aws_caller_identity.current.arn}",
-      ]
-    }
-
-    actions   = ["kms:*"]
-    resources = ["${aws_kms_key.vault.arn}"]
-  }
-
-  statement {
-    sid    = "VaultAutoUnseal"
-    effect = "Allow"
-
-    principals {
-      type = "AWS"
-
-      identifiers = [
-        "${aws_iam_role.vault.arn}",
-        "${data.aws_caller_identity.current.arn}",
-      ]
-    }
-
-    actions   = ["kms:*"]
-    resources = ["${aws_kms_key.vault.arn}"]
-  }
 }
 
 #--------------------------------------------------------------------
@@ -111,31 +74,10 @@ resource "aws_s3_bucket_policy" "vault" {
 
 data "aws_iam_policy_document" "vault_bucket_policy" {
   statement {
-    sid    = "VaultStorage"
+    sid    = "VaultStorageDeny"
     effect = "Deny"
 
     not_principals {
-      type = "AWS"
-
-      identifiers = [
-        "${aws_iam_role.vault.arn}",
-        "${data.aws_caller_identity.current.arn}",
-      ]
-    }
-
-    actions = ["s3:*"]
-
-    resources = [
-      "${aws_s3_bucket.vault.arn}",
-      "${aws_s3_bucket.vault.arn}/*",
-    ]
-  }
-
-  statement {
-    sid    = "VaultStorage"
-    effect = "Allow"
-
-    principals {
       type = "AWS"
 
       identifiers = [
@@ -182,6 +124,17 @@ resource "aws_dynamodb_table" "vault" {
 
 data "aws_iam_policy_document" "vault_role_policy" {
   statement {
+    sid     = "VaultStorage"
+    effect  = "Allow"
+    actions = ["s3:*"]
+
+    resources = [
+      "${aws_s3_bucket.vault.arn}",
+      "${aws_s3_bucket.vault.arn}/*",
+    ]
+  }
+
+  statement {
     sid    = "VaultHA"
     effect = "Allow"
 
@@ -209,7 +162,14 @@ data "aws_iam_policy_document" "vault_role_policy" {
   }
 
   statement {
-    sid    = "VaultSSM"
+    sid       = "VaultAutoUnseal"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["${aws_kms_key.vault.arn}"]
+  }
+
+  statement {
+    sid    = "VaultSSMKMS"
     effect = "Allow"
 
     actions = [
@@ -224,7 +184,7 @@ data "aws_iam_policy_document" "vault_role_policy" {
   }
 
   statement {
-    sid    = "VaultSSM"
+    sid    = "VaultSSMParameters"
     effect = "Allow"
 
     actions = [
@@ -245,7 +205,7 @@ data "aws_iam_policy_document" "vault_role_policy" {
 
 resource "aws_iam_policy" "vault" {
   name        = "${var.cluster_name}"
-  description = "DynamoDB and SSM access for Vault cluster ${var.cluster_name}"
+  description = "S3, DynamoDB, KMS, and SSM access for Vault cluster ${var.cluster_name}"
   policy      = "${data.aws_iam_policy_document.vault_role_policy.json}"
 }
 
@@ -357,12 +317,13 @@ resource "aws_launch_template" "vault" {
 }
 
 resource "aws_autoscaling_group" "vault" {
-  name                = "${var.cluster_name}"
-  min_size            = "${var.min_instances}"
-  max_size            = "${var.max_instances}"
-  vpc_zone_identifier = ["${var.subnet_ids}"]
-  target_group_arns   = ["${aws_lb_target_group.vault.arn}"]
-  min_elb_capacity    = 1
+  name                      = "${var.cluster_name}"
+  min_size                  = "${var.min_instances}"
+  max_size                  = "${var.max_instances}"
+  vpc_zone_identifier       = ["${var.subnet_ids}"]
+  target_group_arns         = ["${aws_lb_target_group.vault.arn}"]
+  min_elb_capacity          = 1
+  wait_for_capacity_timeout = "15m"
 
   launch_template {
     id      = "${aws_launch_template.vault.id}"
@@ -370,7 +331,11 @@ resource "aws_autoscaling_group" "vault" {
   }
 
   provisioner "local-exec" {
-    command = "bash init.sh 'https://${var.domain_name}' '${var.ssm_path_vault_root_token}' '${var.ssm_path_vault_recovery_key_base64}'"
+    command = "bash init.sh '${var.ssm_path_vault_root_token}' '${var.ssm_path_vault_recovery_key_base64}'"
+
+    environment = {
+      VAULT_ADDR = "https://${var.domain_name}"
+    }
   }
 }
 

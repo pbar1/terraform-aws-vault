@@ -55,7 +55,7 @@ storage "s3" {
 }
 
 ha_storage "dynamodb" {
-  ha_enabled = true
+  ha_enabled = "true"
   region     = "${aws_region}"
   table      = "${dynamodb_table}"
 }
