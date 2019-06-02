@@ -127,6 +127,7 @@ data "aws_iam_policy_document" "vault_role_policy" {
       "kms:Encrypt",
       "kms:Decrypt",
       "kms:DescribeKey",
+      "kms:GenerateDataKey"
     ]
 
     resources = [
@@ -144,6 +145,18 @@ data "aws_iam_policy_document" "vault_role_policy" {
       "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/vault/${var.cluster_name}/*",
     ]
   }
+
+  # statement {
+  #   sid    = "AllowS3Access"
+  #   effect = "Allow"
+
+  #   actions = ["s3:*"]
+
+  #   resources = [
+  #     aws_s3_bucket.vault.arn,
+  #     "${aws_s3_bucket.vault.arn}/*",
+  #   ]
+  # }
 }
 
 resource "aws_iam_policy" "vault" {
@@ -205,10 +218,11 @@ resource "aws_security_group" "vault_cluster" {
   }
 
   ingress {
-    description     = "Vault client security group"
+    description     = "Vault client security group and allowd cidrs"
     from_port       = 8200
     to_port         = 8200
     protocol        = "tcp"
+    cidr_blocks     = var.allowed_cidrs
     security_groups = [aws_security_group.vault_client.id]
   }
 
@@ -299,7 +313,9 @@ resource "aws_lb_target_group" "vault" {
 resource "aws_lb_listener" "vault" {
   load_balancer_arn = aws_lb.vault.arn
   port              = 443
-  protocol          = "TCP"
+  protocol          = "TLS"
+  certificate_arn = var.acm_cert_arn
+  ssl_policy = "ELBSecurityPolicy-TLS-1-2-2017-01"
 
   default_action {
     type             = "forward"

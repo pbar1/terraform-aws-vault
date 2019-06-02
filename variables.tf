@@ -69,3 +69,12 @@ variable "domain_name" {
   description = "Domain name of DNS entry to create"
 }
 
+variable "acm_cert_arn" { 
+  description = "Cert ARN for NLB TLS termination"
+}
+
+variable "allowed_cidrs" { 
+  type = list(string)
+  description = "List of CIDRs allowed to access Vault UI and API"
+  default = []
+}
