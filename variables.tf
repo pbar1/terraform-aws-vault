@@ -5,7 +5,7 @@ variable "cluster_name" {
 
 variable "tags" {
   description = "Extra tags to add to all resources created by this module"
-  type        = "map"
+  type        = map(string)
   default     = {}
 }
 
@@ -15,7 +15,7 @@ variable "ami_id" {
 
 variable "instance_type" {
   description = "EC2 instance type for Vault instances"
-  default     = "t2.medium"
+  default     = "t3.medium"
 }
 
 variable "min_instances" {
@@ -34,7 +34,7 @@ variable "vpc_id" {
 
 variable "subnet_ids" {
   description = "List of subnet IDs to launch the Vault auto scaling group in"
-  type        = "list"
+  type        = list(string)
 }
 
 variable "ssh_key_name" {
@@ -67,4 +67,14 @@ variable "zone_id" {
 
 variable "domain_name" {
   description = "Domain name of DNS entry to create"
+}
+
+variable "acm_cert_arn" { 
+  description = "Cert ARN for NLB TLS termination"
+}
+
+variable "allowed_cidrs" { 
+  type = list(string)
+  description = "List of CIDRs allowed to access Vault UI and API"
+  default = []
 }
