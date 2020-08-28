@@ -146,6 +146,19 @@ data "aws_iam_policy_document" "vault_role_policy" {
     ]
   }
 
+  statement {
+    sid     = "PCAIssueCert"
+    effect  = "Allow"
+    actions = [
+      "acm-pca:IssueCertificate",
+      "acm-pca:GetCertificate"
+    ]
+
+    resources = [
+      "*",
+    ]
+  }
+
   # statement {
   #   sid    = "AllowS3Access"
   #   effect = "Allow"
@@ -226,6 +239,15 @@ resource "aws_security_group" "vault_cluster" {
     security_groups = [aws_security_group.vault_client.id]
   }
 
+  ingress {
+    description     = "Vault server ssh access"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    cidr_blocks     = var.allowed_cidrs
+    security_groups = [aws_security_group.vault_client.id]
+  }
+
   egress {
     description = "Allow all egress traffic"
     from_port   = 0
@@ -255,6 +277,7 @@ data "template_file" "user_data" {
     s3_bucket          = aws_s3_bucket.vault.id
     kms_key_id         = aws_kms_key.vault.key_id
     dynamodb_table     = aws_dynamodb_table.vault.name
+    acm_pca_arn        = var.acm_pca_arn
   }
 }
 
@@ -271,10 +294,10 @@ resource "aws_launch_template" "vault" {
     arn = aws_iam_instance_profile.vault.arn
   }
 
-  # tag_specifications {
-  #   resource_type = "instance"
-  #   tags          = "${var.tags}"
-  # }
+  tag_specifications {
+    resource_type = "instance"
+    tags          = merge({"Name"=var.cluster_name},var.tags)
+  }
 
   tags = var.tags
 }
@@ -297,13 +320,13 @@ resource "aws_autoscaling_group" "vault" {
 resource "aws_lb_target_group" "vault" {
   name     = var.cluster_name
   port     = 8200
-  protocol = "TCP"
+  protocol = "TLS"
   vpc_id   = var.vpc_id
 
-  stickiness {
-    type    = "lb_cookie"
-    enabled = false
-  }
+  # stickiness {
+  #   type    = "lb_cookie"
+  #   enabled = false
+  # }
 
   health_check {
     protocol = "TCP"

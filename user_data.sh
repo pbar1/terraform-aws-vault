@@ -9,17 +9,6 @@ exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
 export AWS_DEFAULT_REGION=${aws_region}
 SELF_PRIVATE_IP="$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)"
 
-# aws ssm get-parameter \
-#   --name "/vault/${vault_cluster_name}/vault.pem" \
-# | jq -r '.Parameter.Value' \
-# > /etc/vault.d/vault.pem
-
-# aws ssm get-parameter \
-#   --name "/vault/${vault_cluster_name}/vault-key.pem" \
-#   --with-decryption \
-# | jq -r '.Parameter.Value' \
-# > /etc/vault.d/vault-key.pem
-
 export DD_API_KEY="$(aws ssm get-parameter --name "/vault/${vault_cluster_name}/dd_api_key" --with-decryption | jq -r '.Parameter.Value')"
 bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
 
@@ -46,9 +35,8 @@ seal "awskms" {
 listener "tcp" {
   address         = "0.0.0.0:8200"
   cluster_address = "0.0.0.0:8201"
-#  tls_cert_file   = "/etc/vault.d/vault.pem"
-#  tls_key_file    = "/etc/vault.d/vault-key.pem"
-  tls_disable     = "true"
+  tls_cert_file   = "/etc/vault.d/vault.pem"
+  tls_key_file    = "/etc/vault.d/vault-key.pem"
 }
 
 telemetry {
@@ -59,6 +47,25 @@ telemetry {
 cluster_addr  = "https://$SELF_PRIVATE_IP:8201"
 api_addr      = "https://$SELF_PRIVATE_IP:8200"
 EOF
+
+openssl ecparam -out /etc/vault.d/vault-key.pem -name prime256v1 -genkey
+openssl req -new -key /etc/vault.d/vault-key.pem -out cert.csr -subj "/CN=$(hostname)"
+
+cert_arn=$(aws acm-pca issue-certificate \
+--certificate-authority-arn ${acm_pca_arn} \
+--csr file://cert.csr \
+--signing-algorithm "SHA256WITHECDSA" \
+--validity Value=1,Type="YEARS" | jq -r .CertificateArn)
+
+cert=$(aws acm-pca get-certificate \
+--certificate-authority-arn ${acm_pca_arn} \
+--certificate-arn $cert_arn)
+
+echo $cert | jq -r .Certificate > /etc/vault.d/vault.pem
+echo $cert | jq -r .CertificateChain >> /etc/vault.d/vault.pem
+
+chown --recursive vault:vault /etc/vault.d
+chmod 640 /etc/vault.d/*.pem
 
 # Enable and start the Vault server agent
 systemctl enable vault

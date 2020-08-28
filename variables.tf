@@ -78,3 +78,8 @@ variable "allowed_cidrs" {
   description = "List of CIDRs allowed to access Vault UI and API"
   default = []
 }
+variable "acm_pca_arn" { 
+  type = string
+  description = "Arn of the ACM Private CA you want to sign the cert request"
+  default = "" 
+}

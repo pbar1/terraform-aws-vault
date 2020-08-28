@@ -3,7 +3,7 @@
   "variables": {
     "aws_region": "us-east-2",
     "iam_instance_profile": "",
-    "vault_version": "1.1.2"
+    "vault_version": "1.5.2"
   },
   "builders": [
     {
