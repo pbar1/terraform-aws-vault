@@ -180,18 +180,6 @@ data "aws_iam_policy_document" "vault_role_policy" {
       "*",
     ]
   }
-
-  # statement {
-  #   sid    = "AllowS3Access"
-  #   effect = "Allow"
-
-  #   actions = ["s3:*"]
-
-  #   resources = [
-  #     aws_s3_bucket.vault.arn,
-  #     aws_s3_bucket.vault.arn}/*",
-  #   ]
-  # }
 }
 
 resource "aws_iam_policy" "vault" {
@@ -360,7 +348,7 @@ resource "aws_autoscaling_group" "vault" {
   }
 
   provisioner "local-exec" {
-    command = "bash '${path.module}/init.sh' 'https://${aws_route53_record.vault.fqdn}' '${local.ssm_path_vault_root_token}' '${local.ssm_path_vault_recovery_keys_b64}' '${var.region}'"
+    command = "if ${var.init_cluster} ; then bash '${path.module}/init.sh' 'https://${aws_route53_record.vault.fqdn}' '${local.ssm_path_vault_root_token}' '${local.ssm_path_vault_recovery_keys_b64}' '${var.region}'; fi"
   }
 }
 

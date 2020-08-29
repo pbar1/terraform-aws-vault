@@ -189,3 +189,9 @@ variable "ebs_root_volume_encrypted" {
 variable "spot" {
   default = false
 }
+
+variable "init_cluster" {
+  type = bool
+  default = "true"
+  description = "If set to true, the cluster will init with a local provisioner and store root token and unseal keys in SSM Parameter store."
+}
