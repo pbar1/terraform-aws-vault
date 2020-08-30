@@ -168,18 +168,18 @@ data "aws_iam_policy_document" "vault_role_policy" {
     ]
   }
 
-  statement {
-    sid     = "PCAIssueCert"
-    effect  = "Allow"
-    actions = [
-      "acm-pca:IssueCertificate",
-      "acm-pca:GetCertificate"
-    ]
+  # statement {
+  #   sid     = "PCAIssueCert"
+  #   effect  = "Allow"
+  #   actions = [
+  #     "acm-pca:IssueCertificate",
+  #     "acm-pca:GetCertificate"
+  #   ]
 
-    resources = [
-      "*",
-    ]
-  }
+  #   resources = [
+  #     "*",
+  #   ]
+  # }
 }
 
 resource "aws_iam_policy" "vault" {
