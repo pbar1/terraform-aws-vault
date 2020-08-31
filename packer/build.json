@@ -1,16 +1,23 @@
 {
   "min_packer_version": "0.12.0",
   "variables": {
-    "aws_region": "us-east-2",
-    "iam_instance_profile": "",
-    "vault_version": "1.5.2"
+    "vault_version": "1.5.2",
+    "aws_region": "us-west-2",
+    "iam_instance_profile": "packer",
+    "vpc_id": "",
+    "subnet_id": "",
+    "security_group_id": ""
   },
   "builders": [
     {
       "ami_name": "vault-{{user `vault_version`}}-{{isotime | clean_ami_name}}",
       "ami_description": "Hashicorp Vault on Amazon Linux 2",
+      "ami_regions": [
+        "eu-central-1"
+      ],
+      "ami_users": ["<REPLACE_AMI_USERS>"],
       "iam_instance_profile": "{{user `iam_instance_profile`}}",
-      "instance_type": "t2.micro",
+      "instance_type": "m5.large",
       "region": "{{user `aws_region`}}",
       "type": "amazon-ebs",
       "source_ami_filter": {
@@ -32,7 +39,10 @@
         "VaultVersion": "{{user `vault_version`}}",
         "BuildTime": "{{isotime}}",
         "CreatedBy": "Packer"
-      }
+      },
+      "vpc_id": "{{user `vpc_id`}}",
+      "subnet_id": "{{user `subnet_id`}}",
+      "security_group_id": "{{user `security_group_id`}}"
     }
   ],
   "provisioners": [

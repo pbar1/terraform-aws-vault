@@ -1,76 +1,69 @@
-data "aws_region" "current" {
+locals {
+  ssm_path_vault_recovery_keys_b64 = var.ssm_path_vault_recovery_keys_b64 != "" ? var.ssm_path_vault_recovery_keys_b64 : "/${var.name}/recovery_keys_b64"
+  
+  ssm_path_vault_root_token = var.ssm_path_vault_root_token != "" ? var.ssm_path_vault_root_token : "/${var.name}/root_token"
+  
 }
 
-data "aws_caller_identity" "current" {
+#--------------------------------------------------------------------
+# Data Providers
+#--------------------------------------------------------------------
+
+data "aws_caller_identity" "current" {}
+
+data "aws_vpc" "current" {
+  id = var.vpc_id
 }
 
 data "aws_kms_key" "ssm" {
   key_id = "alias/aws/ssm"
 }
 
-# KMS
+data "aws_ssm_parameter" "datadog_api_key" {
+  name            = var.ssm_path_datadog_api_key
+  with_decryption = false
+}
+
+data "aws_ssm_parameter" "sumologic_access_id" {
+  name = var.ssm_path_sumologic_access_id
+}
+
+data "aws_ssm_parameter" "sumologic_access_key" {
+  name            = var.ssm_path_sumologic_access_key
+  with_decryption = false
+}
+
+data "aws_ami" "vault" {
+  owners      = var.ami_account_ids
+  most_recent = true
+
+  filter {
+    name   = "name"
+    values = ["vault-${var.vault_version}-*"]
+  }
+}
+
+#--------------------------------------------------------------------
+# Resources - KMS (for Vault Auto Unseal)
+#--------------------------------------------------------------------
 
 resource "aws_kms_key" "vault" {
-  description = "${var.cluster_name} key for S3 storage backend, Auto Unseal, and SSM Parameter Store"
   tags        = var.tags
+  description = "${var.name} key for Vault Auto Unseal"
 }
 
 resource "aws_kms_alias" "vault" {
-  name          = "alias/${var.cluster_name}"
+  name          = "alias/${var.name}"
   target_key_id = aws_kms_key.vault.key_id
 }
 
-# S3
-
-resource "aws_s3_bucket" "vault" {
-  bucket_prefix = "${var.cluster_name}-storage-"
-  acl           = "private"
-  force_destroy = false
-
-  versioning {
-    enabled = true
-  }
-
-  server_side_encryption_configuration {
-    rule {
-      apply_server_side_encryption_by_default {
-        sse_algorithm     = "aws:kms"
-        kms_master_key_id = aws_kms_key.vault.key_id
-      }
-    }
-  }
-
-  tags = var.tags
-}
-
-resource "aws_s3_bucket_policy" "vault" {
-  bucket = aws_s3_bucket.vault.id
-  policy = data.aws_iam_policy_document.vault_bucket_policy.json
-}
-
-data "aws_iam_policy_document" "vault_bucket_policy" {
-  statement {
-    sid    = "AllowVaultRole"
-    effect = "Allow"
-
-    principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.vault.arn]
-    }
-
-    actions = ["s3:*"]
-
-    resources = [
-      aws_s3_bucket.vault.arn,
-      "${aws_s3_bucket.vault.arn}/*",
-    ]
-  }
-}
-
-# DynamoDB
+#--------------------------------------------------------------------
+# Resources - DynamoDB (for Vault Storage backend)
+#--------------------------------------------------------------------
 
 resource "aws_dynamodb_table" "vault" {
-  name           = "${var.cluster_name}-ha"
+  tags           = var.tags
+  name           = "${var.name}-storage"
   read_capacity  = var.dynamodb_read_capacity
   write_capacity = var.dynamodb_write_capacity
   hash_key       = "Path"
@@ -86,14 +79,35 @@ resource "aws_dynamodb_table" "vault" {
     type = "S"
   }
 
-  tags = var.tags
+  lifecycle {
+    ignore_changes = [read_capacity, write_capacity]
+  }
 }
 
-# IAM
+module "dynamodb_autoscaler" {
+  source  = "cloudposse/dynamodb-autoscaler/aws"
+  version = "0.8.0"
+
+  namespace                    = "ep"
+  stage                        = var.environment
+  name                         = var.name
+  dynamodb_table_name          = aws_dynamodb_table.vault.name
+  dynamodb_table_arn           = aws_dynamodb_table.vault.arn
+  autoscale_write_target       = var.dynamodb_write_scale_target
+  autoscale_read_target        = var.dynamodb_read_scale_target
+  autoscale_min_read_capacity  = var.dynamodb_read_capacity
+  autoscale_max_read_capacity  = var.dynamodb_read_capacity_max
+  autoscale_min_write_capacity = var.dynamodb_write_capacity
+  autoscale_max_write_capacity = var.dynamodb_write_capacity_max
+}
+
+#--------------------------------------------------------------------
+# Resources - IAM
+#--------------------------------------------------------------------
 
 data "aws_iam_policy_document" "vault_role_policy" {
   statement {
-    sid    = "DynamoHABackend"
+    sid    = "VaultStorage"
     effect = "Allow"
 
     actions = [
@@ -120,14 +134,14 @@ data "aws_iam_policy_document" "vault_role_policy" {
   }
 
   statement {
-    sid    = "KMSAutoUnseal"
+    sid    = "VaultKMS"
     effect = "Allow"
 
     actions = [
       "kms:Encrypt",
       "kms:Decrypt",
       "kms:DescribeKey",
-      "kms:GenerateDataKey"
+      "kms:GenerateDataKey",
     ]
 
     resources = [
@@ -137,44 +151,40 @@ data "aws_iam_policy_document" "vault_role_policy" {
   }
 
   statement {
-    sid     = "SSMParameters"
-    effect  = "Allow"
-    actions = ["ssm:GetParameter"]
+    sid    = "VaultSSM"
+    effect = "Allow"
 
-    resources = [
-      "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/vault/${var.cluster_name}/*",
-    ]
-  }
-
-  statement {
-    sid     = "PCAIssueCert"
-    effect  = "Allow"
     actions = [
-      "acm-pca:IssueCertificate",
-      "acm-pca:GetCertificate"
+      "ssm:GetParameter",
+      "ssm:PutParameter",
     ]
 
     resources = [
-      "*",
+      data.aws_ssm_parameter.datadog_api_key.arn,
+      data.aws_ssm_parameter.sumologic_access_id.arn,
+      data.aws_ssm_parameter.sumologic_access_key.arn,
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.ssm_path_vault_recovery_keys_b64}",
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${local.ssm_path_vault_root_token}",
     ]
   }
 
   # statement {
-  #   sid    = "AllowS3Access"
-  #   effect = "Allow"
-
-  #   actions = ["s3:*"]
+  #   sid     = "PCAIssueCert"
+  #   effect  = "Allow"
+  #   actions = [
+  #     "acm-pca:IssueCertificate",
+  #     "acm-pca:GetCertificate"
+  #   ]
 
   #   resources = [
-  #     aws_s3_bucket.vault.arn,
-  #     "${aws_s3_bucket.vault.arn}/*",
+  #     "*",
   #   ]
   # }
 }
 
 resource "aws_iam_policy" "vault" {
-  name        = var.cluster_name
-  description = "DynamoDB, KMS, and SSM access for Vault cluster ${var.cluster_name}"
+  name        = var.name
+  description = "DynamoDB, KMS, and SSM access for Vault cluster ${var.name}"
   policy      = data.aws_iam_policy_document.vault_role_policy.json
 }
 
@@ -184,10 +194,10 @@ resource "aws_iam_role_policy_attachment" "vault" {
 }
 
 resource "aws_iam_role" "vault" {
-  name               = var.cluster_name
-  description        = "Role that Vault cluster ${var.cluster_name} runs as"
-  assume_role_policy = data.aws_iam_policy_document.assume_ec2.json
   tags               = var.tags
+  name               = var.name
+  description        = "Role that Vault cluster ${var.name} runs as"
+  assume_role_policy = data.aws_iam_policy_document.assume_ec2.json
 }
 
 data "aws_iam_policy_document" "assume_ec2" {
@@ -203,49 +213,33 @@ data "aws_iam_policy_document" "assume_ec2" {
 }
 
 resource "aws_iam_instance_profile" "vault" {
-  name = var.cluster_name
+  name = var.name
   role = aws_iam_role.vault.name
 }
 
-# SG
-
-resource "aws_security_group" "vault_cluster" {
-  name        = "${var.cluster_name}-cluster"
-  description = "Vault cluster ${var.cluster_name} internal communication"
+#--------------------------------------------------------------------
+# Resources - Security Group
+#--------------------------------------------------------------------
+resource "aws_security_group" "vault_lb" {
+  tags        = var.tags
+  name        = "${var.name}-lb"
+  description = "Vault LoadBalancer ${var.name}"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "Vault UI and API connectivity"
-    from_port   = 8200
-    to_port     = 8200
+    description = "Allowed CIDRs"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
-    self        = true
+    cidr_blocks = concat(list(data.aws_vpc.current.cidr_block), var.extra_cidr_blocks)
   }
 
   ingress {
-    description = "Vault server to server traffic within a cluster"
-    from_port   = 8201
-    to_port     = 8201
-    protocol    = "tcp"
-    self        = true
-  }
-
-  ingress {
-    description     = "Vault client security group and allowd cidrs"
-    from_port       = 8200
-    to_port         = 8200
+    description     = "Allowed security groups"
+    from_port       = 443
+    to_port         = 443
     protocol        = "tcp"
-    cidr_blocks     = var.allowed_cidrs
-    security_groups = [aws_security_group.vault_client.id]
-  }
-
-  ingress {
-    description     = "Vault server ssh access"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    cidr_blocks     = var.allowed_cidrs
-    security_groups = [aws_security_group.vault_client.id]
+    security_groups = var.allowed_security_groups
   }
 
   egress {
@@ -255,40 +249,81 @@ resource "aws_security_group" "vault_cluster" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = var.tags
 }
 
-resource "aws_security_group" "vault_client" {
-  name        = "${var.cluster_name}-client"
-  description = "Vault cluster ${var.cluster_name} clients"
-  vpc_id      = var.vpc_id
+resource "aws_security_group" "vault_cluster" {
   tags        = var.tags
+  name        = "${var.name}-server"
+  description = "Vault cluster ${var.name}"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "From Vault LB"
+    from_port       = 8200
+    to_port         = 8200
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vault_lb.id]
+  }
+
+  ingress {
+    description = "Vault server to server"
+    from_port   = 8200
+    to_port     = 8201
+    protocol    = "tcp"
+    self        = true
+  }
+
+  egress {
+    description = "Allow all egress traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
 
-# ASG
+#--------------------------------------------------------------------
+# Resources - Auto Scaling Group
+#--------------------------------------------------------------------
 
-data "template_file" "user_data" {
-  template = file("${path.module}/user_data.sh")
+data "template_file" "userdata" {
+  template = file("${path.module}/userdata.sh")
 
   vars = {
-    aws_region         = data.aws_region.current.name
-    vault_cluster_name = var.cluster_name
-    s3_bucket          = aws_s3_bucket.vault.id
+    aws_region         = var.region
     kms_key_id         = aws_kms_key.vault.key_id
     dynamodb_table     = aws_dynamodb_table.vault.name
     acm_pca_arn        = var.acm_pca_arn
+    cluster_name             = var.name
+    cluster_fqdn             = aws_route53_record.vault.fqdn
+    dogstatsd_tags           = var.dogstatsd_tags
+    ssm_path_datadog_api_key = var.ssm_path_datadog_api_key
+    ssm_path_sumo_access_id  = var.ssm_path_sumologic_access_id
+    ssm_path_sumo_access_key = var.ssm_path_sumologic_access_key
   }
 }
 
 resource "aws_launch_template" "vault" {
-  name                   = var.cluster_name
-  description            = "Vault cluster ${var.cluster_name} launch template"
-  image_id               = var.ami_id
-  user_data              = base64encode(data.template_file.user_data.rendered)
+  tags                   = var.tags
+  name                   = var.name
+  description            = "Vault cluster ${var.name} launch template"
+  image_id               = data.aws_ami.vault.id
+  user_data              = base64encode(data.template_file.userdata.rendered)
   instance_type          = var.instance_type
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.vault_cluster.id]
+  ebs_optimized          = true
+
+  block_device_mappings {
+    device_name = var.ebs_root_volume_device_name
+
+    ebs {
+      volume_type           = var.ebs_root_volume_type
+      volume_size           = var.ebs_root_volume_size
+      delete_on_termination = var.ebs_root_volume_delete_on_termination
+      encrypted             = var.ebs_root_volume_encrypted
+    }
+  }
 
   iam_instance_profile {
     arn = aws_iam_instance_profile.vault.arn
@@ -296,14 +331,12 @@ resource "aws_launch_template" "vault" {
 
   tag_specifications {
     resource_type = "instance"
-    tags          = merge({"Name"=var.cluster_name},var.tags)
+    tags          = merge({"Name"=var.name},var.tags)
   }
-
-  tags = var.tags
 }
 
 resource "aws_autoscaling_group" "vault" {
-  name                = var.cluster_name
+  name                = var.name
   min_size            = var.min_instances
   max_size            = var.max_instances
   vpc_zone_identifier = var.subnet_ids
@@ -313,32 +346,40 @@ resource "aws_autoscaling_group" "vault" {
     id      = aws_launch_template.vault.id
     version = aws_launch_template.vault.latest_version
   }
+
+  provisioner "local-exec" {
+    command = "if ${var.init_cluster} ; then bash '${path.module}/init.sh' 'https://${aws_route53_record.vault.fqdn}' '${local.ssm_path_vault_root_token}' '${local.ssm_path_vault_recovery_keys_b64}' '${var.region}'; fi"
+  }
 }
 
-# LB
+#--------------------------------------------------------------------
+# Resources - Load Balancer
+#--------------------------------------------------------------------
 
 resource "aws_lb_target_group" "vault" {
-  name     = var.cluster_name
+  tags     = var.tags
+  name     = var.name
   port     = 8200
-  protocol = "TLS"
+  protocol = "HTTPS"
   vpc_id   = var.vpc_id
 
-  # stickiness {
-  #   type    = "lb_cookie"
-  #   enabled = false
-  # }
+  stickiness {
+    type = "lb_cookie"
+  }
 
   health_check {
-    protocol = "TCP"
+    protocol = "HTTPS"
+    path     = "/v1/sys/health"
+    matcher  = "200"
   }
 }
 
 resource "aws_lb_listener" "vault" {
   load_balancer_arn = aws_lb.vault.arn
   port              = 443
-  protocol          = "TLS"
-  certificate_arn = var.acm_cert_arn
-  ssl_policy = "ELBSecurityPolicy-TLS-1-2-2017-01"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-FS-1-2-Res-2019-08"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"
@@ -346,16 +387,43 @@ resource "aws_lb_listener" "vault" {
   }
 }
 
-resource "aws_lb" "vault" {
-  name                       = var.cluster_name
-  internal                   = var.internal_lb
-  load_balancer_type         = "network"
-  enable_deletion_protection = var.enable_termination_protection
-  subnets                    = var.subnet_ids
-  tags                       = var.tags
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.vault.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
 }
 
-# Route 53
+resource "aws_lb" "vault" {
+  tags     = var.tags
+  name     = var.name
+  internal = var.internal_lb
+  subnets  = var.subnet_ids
+
+  enable_deletion_protection       = var.enable_termination_protection
+  enable_cross_zone_load_balancing = var.enable_cross_zone_load_balancing
+
+  security_groups = [aws_security_group.vault_lb.id]
+
+  lifecycle {
+    ignore_changes = [
+      access_logs,
+    ]
+  }
+}
+
+#--------------------------------------------------------------------
+# Resources - Route53
+#--------------------------------------------------------------------
 
 resource "aws_route53_record" "vault" {
   zone_id = var.zone_id
@@ -368,4 +436,3 @@ resource "aws_route53_record" "vault" {
     evaluate_target_health = false
   }
 }
-
