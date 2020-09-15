@@ -28,7 +28,7 @@ variable "vpc_id" {
 
 variable "subnet_ids" {
   description = "List of subnet IDs to launch the Vault auto scaling group in"
-  type        = "list"
+  type        = list
 }
 
 variable "zone_id" {
@@ -55,19 +55,23 @@ variable "certificate_arn" {
   description = "ARN of the ACM certificate to be used by the ALB."
 }
 
+variable "ami_account_ids" {
+  description = "List of AWS account IDs to use when filtering for the Vault AMI"
+}
+
 #--------------------------------------------------------------------
 # Optional Variables
 #--------------------------------------------------------------------
 
 variable "tags" {
   description = "Extra tags to add to all resources created by this module"
-  type        = "map"
+  type        = map
   default     = {}
 }
 
 variable "dogstatsd_tags" {
   description = "List of tags to attach to DogStatsD metrics. Written as a raw HCL string"
-  type        = "string"
+  type        = string
 
   default = <<HCL
 ["vault_cluster:vault"]
@@ -136,18 +140,13 @@ variable "enable_cross_zone_load_balancing" {
 
 variable "extra_cidr_blocks" {
   description = "List of CIDR blocks allowed to access the Vault API. The VPC in which Vault resides is already covered."
-  type        = "list"
+  type        = list
   default     = []
 }
 
 variable "allowed_security_groups" {
   description = "List of security groups allowed to access the Vault API."
-  type        = "list"
-  default     = []
-}
-
-variable "ami_account_ids" {
-  description = "List of AWS account IDs to use when filtering for the Vault AMI"
+  type        = list
   default     = []
 }
 
@@ -166,6 +165,11 @@ variable "ebs_root_volume_device_name" {
   default     = "/dev/xvda"
 }
 
+variable "acm_pca_arn" { 
+  type = string
+  description = "Arn of the ACM Private CA you want to sign the cert request"
+  default = ""
+}
 variable "ebs_root_volume_type" {
   default = "gp2"
 }
@@ -184,4 +188,10 @@ variable "ebs_root_volume_encrypted" {
 
 variable "spot" {
   default = false
+}
+
+variable "init_cluster" {
+  type = bool
+  default = "true"
+  description = "If set to true, the cluster will init with a local provisioner and store root token and unseal keys in SSM Parameter store."
 }

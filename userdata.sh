@@ -85,7 +85,8 @@ chmod +x SumoCollector.sh
   -Vsumo.accessid="$SUMO_ACCESS_ID" \
   -Vsumo.accesskey="$SUMO_ACCESS_KEY" \
   -Vdescription="Vault cluster ${cluster_name}" \
-  -VsyncSources="/opt/SumoCollector/sources.json"
+  -VsyncSources="/opt/SumoCollector/sources.json" \
+  -Vephemeral=true
 
 #--------------------------------------------------------------------
 # Configure Logrotate ('EOF' so the subshell doesn't execute)
@@ -109,21 +110,6 @@ EOF
 
 # setting hourly has no effect unless logrotate actually runs hourly using cron
 mv /etc/cron.daily/logrotate /etc/cron.hourly/
-
-#--------------------------------------------------------------------
-# Install Nessus agent
-#--------------------------------------------------------------------
-NESSUS_KEY_B64='<REPLACE_NESSUS_KEY>'
-
-curl -sLo nessus.rpm 'https://www.tenable.com/downloads/api/v1/public/pages/nessus-agents/downloads/10975/download?i_agree_to_tenable_license_agreement=true'
-rpm -i nessus.rpm
-rm nessus.rpm
-/etc/init.d/nessusagent start
-/opt/nessus_agent/sbin/nessuscli agent link           \
-  --host="<REPLACE_NESSUS_HOST>"                \
-  --port="8834"                                       \
-  --key="$(echo "$NESSUS_KEY_B64" | base64 --decode)" \
-  --groups="<REPLACE_NESSUS_GROUPS>"
 
 #--------------------------------------------------------------------
 # Generate Vault's TLS certificate and key
