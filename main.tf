@@ -86,7 +86,7 @@ resource "aws_dynamodb_table" "vault" {
 
 module "dynamodb_autoscaler" {
   source  = "cloudposse/dynamodb-autoscaler/aws"
-  version = "0.8.0"
+  version = "0.9.1"
 
   namespace                    = "ep"
   stage                        = var.environment
