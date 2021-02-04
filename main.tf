@@ -168,6 +168,23 @@ data "aws_iam_policy_document" "vault_role_policy" {
     ]
   }
 
+  statement {
+    effect  = "Allow"
+    actions = ["iam:GetRole", "iam:GetUser"]
+    # List of ARNs Vault machines can query
+    # For more security, it could be set to specific roles or users:
+    # resources = ["${aws_iam_role.example_instance_role.arn}"]        
+    resources = [
+      "arn:aws:iam::*:user/*",
+      "arn:aws:iam::*:role/*",
+    ]
+  }
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }  
+
   # statement {
   #   sid     = "PCAIssueCert"
   #   effect  = "Allow"
