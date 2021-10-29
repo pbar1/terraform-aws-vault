@@ -248,7 +248,7 @@ resource "aws_security_group" "vault_lb" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = concat(list(data.aws_vpc.current.cidr_block), var.extra_cidr_blocks)
+    cidr_blocks = concat([data.aws_vpc.current.cidr_block], var.extra_cidr_blocks)
   }
 
   ingress {
