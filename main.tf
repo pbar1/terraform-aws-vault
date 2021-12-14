@@ -303,23 +303,6 @@ resource "aws_security_group" "vault_cluster" {
 # Resources - Auto Scaling Group
 #--------------------------------------------------------------------
 
-# data "template_file" "userdata" {
-#   template = file("${path.module}/userdata.sh")
-
-#   vars = {
-#     aws_region         = var.region
-#     kms_key_id         = aws_kms_key.vault.key_id
-#     dynamodb_table     = aws_dynamodb_table.vault.name
-#     acm_pca_arn        = var.acm_pca_arn
-#     cluster_name             = var.name
-#     cluster_fqdn             = aws_route53_record.vault.fqdn
-#     dogstatsd_tags           = var.dogstatsd_tags
-#     ssm_path_datadog_api_key = var.ssm_path_datadog_api_key
-#     ssm_path_sumo_access_id  = var.ssm_path_sumologic_access_id
-#     ssm_path_sumo_access_key = var.ssm_path_sumologic_access_key
-#   }
-# }
-
 resource "aws_launch_template" "vault" {
   tags                   = var.tags
   name                   = var.name
