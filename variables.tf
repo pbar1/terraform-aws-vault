@@ -171,7 +171,7 @@ variable "acm_pca_arn" {
   default = ""
 }
 variable "ebs_root_volume_type" {
-  default = "gp2"
+  default = "gp3"
 }
 
 variable "ebs_root_volume_size" {
