@@ -18,7 +18,7 @@ SELF_PRIVATE_IP="$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)"
 # Install Datadog Agent
 #--------------------------------------------------------------------
 export DD_API_KEY="$(aws ssm get-parameter --name "${ssm_path_datadog_api_key}" --with-decryption | jq -r '.Parameter.Value')"
-bash -c "$(curl -L https://raw.githubusercontent.com/DataDog/datadog-agent/master/cmd/agent/install_script.sh)"
+DD_AGENT_MAJOR_VERSION=7 bash -c "$(curl -L https://s3.amazonaws.com/dd-agent/scripts/install_script.sh)"
 
 mkdir -p /etc/datadog-agent/conf.d/http_check.d
 cat > /etc/datadog-agent/conf.d/http_check.d/conf.yaml <<EOF

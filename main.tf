@@ -86,7 +86,7 @@ resource "aws_dynamodb_table" "vault" {
 
 module "dynamodb_autoscaler" {
   source  = "cloudposse/dynamodb-autoscaler/aws"
-  version = "0.8.0"
+  version = "0.9.1"
 
   namespace                    = "ep"
   stage                        = var.environment
@@ -168,6 +168,23 @@ data "aws_iam_policy_document" "vault_role_policy" {
     ]
   }
 
+  statement {
+    effect  = "Allow"
+    actions = ["iam:GetRole", "iam:GetUser"]
+    # List of ARNs Vault machines can query
+    # For more security, it could be set to specific roles or users:
+    # resources = ["${aws_iam_role.example_instance_role.arn}"]        
+    resources = [
+      "arn:aws:iam::*:user/*",
+      "arn:aws:iam::*:role/*",
+    ]
+  }
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }  
+
   # statement {
   #   sid     = "PCAIssueCert"
   #   effect  = "Allow"
@@ -231,7 +248,7 @@ resource "aws_security_group" "vault_lb" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = concat(list(data.aws_vpc.current.cidr_block), var.extra_cidr_blocks)
+    cidr_blocks = concat([data.aws_vpc.current.cidr_block], var.extra_cidr_blocks)
   }
 
   ingress {
@@ -286,29 +303,26 @@ resource "aws_security_group" "vault_cluster" {
 # Resources - Auto Scaling Group
 #--------------------------------------------------------------------
 
-data "template_file" "userdata" {
-  template = file("${path.module}/userdata.sh")
-
-  vars = {
-    aws_region         = var.region
-    kms_key_id         = aws_kms_key.vault.key_id
-    dynamodb_table     = aws_dynamodb_table.vault.name
-    acm_pca_arn        = var.acm_pca_arn
-    cluster_name             = var.name
-    cluster_fqdn             = aws_route53_record.vault.fqdn
-    dogstatsd_tags           = var.dogstatsd_tags
-    ssm_path_datadog_api_key = var.ssm_path_datadog_api_key
-    ssm_path_sumo_access_id  = var.ssm_path_sumologic_access_id
-    ssm_path_sumo_access_key = var.ssm_path_sumologic_access_key
-  }
-}
-
 resource "aws_launch_template" "vault" {
   tags                   = var.tags
   name                   = var.name
   description            = "Vault cluster ${var.name} launch template"
   image_id               = data.aws_ami.vault.id
-  user_data              = base64encode(data.template_file.userdata.rendered)
+  user_data              = base64encode(templatefile(
+    "${path.module}/userdata.sh",
+    {
+      aws_region         = var.region
+      kms_key_id         = aws_kms_key.vault.key_id
+      dynamodb_table     = aws_dynamodb_table.vault.name
+      acm_pca_arn        = var.acm_pca_arn
+      cluster_name             = var.name
+      cluster_fqdn             = aws_route53_record.vault.fqdn
+      dogstatsd_tags           = var.dogstatsd_tags
+      ssm_path_datadog_api_key = var.ssm_path_datadog_api_key
+      ssm_path_sumo_access_id  = var.ssm_path_sumologic_access_id
+      ssm_path_sumo_access_key = var.ssm_path_sumologic_access_key
+    }
+  ))
   instance_type          = var.instance_type
   key_name               = var.ssh_key_name
   vpc_security_group_ids = [aws_security_group.vault_cluster.id]
